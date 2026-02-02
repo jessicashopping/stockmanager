@@ -1,0 +1,130 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 248 250 252;
+    --foreground: 15 23 42;
+  }
+  
+  .dark {
+    --background: 15 15 26;
+    --foreground: 248 250 252;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+  }
+  
+  body {
+    @apply bg-background-light dark:bg-background-dark text-gray-900 dark:text-gray-100;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-100 dark:bg-gray-900;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 dark:bg-gray-700 rounded-full;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400 dark:bg-gray-600;
+  }
+  
+  /* Focus styles */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-primary-500 ring-offset-2 ring-offset-white dark:ring-offset-gray-900;
+  }
+  
+  /* Remove focus outline for mouse users */
+  *:focus:not(:focus-visible) {
+    @apply outline-none ring-0;
+  }
+}
+
+@layer components {
+  .glass {
+    @apply bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl;
+  }
+  
+  .gradient-text {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-600 to-primary-400;
+  }
+  
+  .card-hover {
+    @apply transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 hover:border-primary-200 dark:hover:border-primary-800;
+  }
+  
+  .input-base {
+    @apply w-full rounded-lg border border-gray-300 dark:border-gray-600 
+      bg-white dark:bg-gray-900 
+      text-gray-900 dark:text-gray-100
+      placeholder:text-gray-400 dark:placeholder:text-gray-500
+      focus:ring-2 focus:ring-primary-500 focus:border-primary-500
+      disabled:opacity-50 disabled:cursor-not-allowed
+      transition-all duration-200;
+  }
+  
+  .stat-card {
+    @apply p-4 sm:p-5 rounded-xl bg-white dark:bg-gray-800/50 
+      border border-gray-200 dark:border-gray-700/50
+      transition-all duration-200 hover:shadow-soft;
+  }
+}
+
+@layer utilities {
+  .animate-in {
+    animation: animateIn 0.3s ease-out;
+  }
+  
+  @keyframes animateIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
+/* HTML5 QR Code scanner overrides */
+#barcode-scanner-container video {
+  object-fit: cover !important;
+  border-radius: 0.75rem;
+}
+
+#barcode-scanner-container img {
+  display: none !important;
+}
+
+/* Table responsive */
+.table-container {
+  @apply overflow-x-auto -mx-4 sm:mx-0;
+}
+
+.table-container table {
+  @apply min-w-full;
+}
