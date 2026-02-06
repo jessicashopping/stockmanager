@@ -94,7 +94,7 @@ export default function EditProductPage() {
       dismissToast(toastId)
 
       if (updated) {
-        updateLocalProduct(updated)
+        // Don't call updateLocalProduct here - realtime subscription will handle it
         showSuccess('Prodotto aggiornato!', `"${updated.name}" è stato modificato`)
         router.push('/products')
       } else {
