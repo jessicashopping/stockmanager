@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useEffect, useRef, useState, useCallback } from 'react'
-import { Camera, X, Flashlight, SwitchCamera, Barcode, Loader2 } from 'lucide-react'
+import React, { useEffect, useRef, useState } from 'react'
+import { Camera, X, Flashlight, Loader2, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
@@ -12,104 +12,127 @@ interface BarcodeScannerProps {
 }
 
 export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerProps) {
-  const [isScanning, setIsScanning] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState<'loading' | 'scanning' | 'error'>('loading')
+  const [errorMessage, setErrorMessage] = useState<string>('')
   const [hasFlash, setHasFlash] = useState(false)
   const [flashOn, setFlashOn] = useState(false)
-  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
   const scannerRef = useRef<any>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [isInitialized, setIsInitialized] = useState(false)
+  const mountedRef = useRef(true)
+  const initRef = useRef(false)
 
-  const startScanner = useCallback(async () => {
-    if (!containerRef.current || isScanning) return
+  const stopScanner = async () => {
+    if (scannerRef.current) {
+      try {
+        const state = scannerRef.current.getState()
+        if (state === 2) { // SCANNING state
+          await scannerRef.current.stop()
+        }
+      } catch (err) {
+        console.log('Stop scanner:', err)
+      }
+      scannerRef.current = null
+    }
+  }
+
+  const startScanner = async () => {
+    if (!mountedRef.current) return
+    
+    setStatus('loading')
+    setErrorMessage('')
 
     try {
+      // Check if camera is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera not supported')
+      }
+
+      // Request camera permission first
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: 'environment' } 
+        })
+        // Stop the test stream
+        stream.getTracks().forEach(track => track.stop())
+      } catch (permErr: any) {
+        if (permErr.name === 'NotAllowedError') {
+          throw new Error('Permesso fotocamera negato. Vai nelle impostazioni del browser e abilita la fotocamera per questo sito.')
+        }
+        throw new Error('Impossibile accedere alla fotocamera.')
+      }
+
+      // Import library
       const { Html5Qrcode } = await import('html5-qrcode')
       
-      const scannerId = 'barcode-scanner-container'
-      
-      // Clean up any existing scanner
-      if (scannerRef.current) {
-        try {
-          await scannerRef.current.stop()
-        } catch (e) {
-          // Ignore
-        }
-      }
-      
-      scannerRef.current = new Html5Qrcode(scannerId)
+      if (!mountedRef.current) return
 
-      const config = {
-        fps: 10,
-        qrbox: { width: 280, height: 150 },
-        aspectRatio: 1.5,
+      // Clean up any existing instance
+      await stopScanner()
+      
+      // Create new scanner
+      scannerRef.current = new Html5Qrcode('barcode-scanner-container', {
+        verbose: false
+      })
+
+      if (!mountedRef.current) {
+        await stopScanner()
+        return
       }
 
+      // Start scanning
       await scannerRef.current.start(
-        { facingMode },
-        config,
+        { facingMode: 'environment' },
+        {
+          fps: 10,
+          qrbox: { width: 280, height: 150 },
+        },
         (decodedText: string) => {
+          // Success callback
           if (navigator.vibrate) {
             navigator.vibrate(100)
           }
-          onScan(decodedText)
           stopScanner()
+          onScan(decodedText)
         },
-        () => {}
+        () => {
+          // Ignore scan errors (no code found)
+        }
       )
 
-      setIsScanning(true)
-      setError(null)
+      if (!mountedRef.current) {
+        await stopScanner()
+        return
+      }
 
+      setStatus('scanning')
+
+      // Check for flash capability
       try {
         const capabilities = scannerRef.current.getRunningTrackCapabilities()
-        setHasFlash('torch' in capabilities)
+        setHasFlash(!!capabilities?.torch)
       } catch {
         setHasFlash(false)
       }
-    } catch (err: any) {
-      console.error('Error starting scanner:', err)
-      setError(
-        err.message?.includes('Permission')
-          ? 'Permesso fotocamera negato. Abilita l\'accesso alla fotocamera.'
-          : 'Impossibile avviare la fotocamera.'
-      )
-      setIsScanning(false)
-    }
-  }, [facingMode, onScan, isScanning])
 
-  const stopScanner = useCallback(async () => {
-    if (scannerRef.current?.isScanning) {
-      try {
-        await scannerRef.current.stop()
-      } catch (err) {
-        console.error('Error stopping scanner:', err)
+    } catch (err: any) {
+      console.error('Scanner error:', err)
+      if (mountedRef.current) {
+        setStatus('error')
+        setErrorMessage(err.message || 'Errore durante l\'avvio della fotocamera')
       }
     }
-    setIsScanning(false)
-    setFlashOn(false)
-  }, [])
+  }
 
   const toggleFlash = async () => {
     if (!scannerRef.current || !hasFlash) return
     
     try {
-      if (flashOn) {
-        await scannerRef.current.applyVideoConstraints({ advanced: [{ torch: false }] })
-      } else {
-        await scannerRef.current.applyVideoConstraints({ advanced: [{ torch: true }] })
-      }
+      await scannerRef.current.applyVideoConstraints({
+        advanced: [{ torch: !flashOn }]
+      })
       setFlashOn(!flashOn)
     } catch (err) {
-      console.error('Error toggling flash:', err)
+      console.error('Flash toggle error:', err)
     }
-  }
-
-  const switchCamera = async () => {
-    await stopScanner()
-    setFacingMode(prev => prev === 'environment' ? 'user' : 'environment')
-    setTimeout(startScanner, 100)
   }
 
   const handleClose = () => {
@@ -117,105 +140,114 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
     onClose?.()
   }
 
+  // Initialize scanner on mount
   useEffect(() => {
-    return () => {
-      stopScanner()
-    }
-  }, [stopScanner])
-
-  // Auto-start scanner when component mounts
-  useEffect(() => {
-    if (!isInitialized && containerRef.current) {
-      setIsInitialized(true)
-      // Small delay to ensure DOM is ready
+    mountedRef.current = true
+    
+    if (!initRef.current) {
+      initRef.current = true
+      // Delay to ensure DOM is ready
       const timer = setTimeout(() => {
         startScanner()
-      }, 100)
+      }, 300)
       return () => clearTimeout(timer)
     }
-  }, [isInitialized, startScanner])
+
+    return () => {
+      mountedRef.current = false
+      stopScanner()
+    }
+  }, [])
 
   return (
     <div className={cn('relative', className)}>
-      <div className="relative overflow-hidden rounded-xl bg-black">
+      <div className="relative overflow-hidden rounded-xl bg-black min-h-[300px]">
+        {/* Scanner container - always present */}
         <div 
           id="barcode-scanner-container" 
-          ref={containerRef}
           className="w-full aspect-[4/3]"
         />
         
-        {!isScanning && !error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+        {/* Loading overlay */}
+        {status === 'loading' && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
             <div className="text-center text-white">
-              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
-              <p>Avvio fotocamera...</p>
+              <Loader2 className="w-10 h-10 animate-spin mx-auto mb-3" />
+              <p className="text-lg">Avvio fotocamera...</p>
+              <p className="text-sm text-gray-400 mt-1">Consenti l'accesso se richiesto</p>
             </div>
           </div>
         )}
         
-        {error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
-            <div className="text-center p-4">
-              <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-4">
-                <X className="w-8 h-8 text-red-600 dark:text-red-400" />
+        {/* Error overlay */}
+        {status === 'error' && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
+            <div className="text-center p-6">
+              <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4">
+                <AlertCircle className="w-8 h-8 text-red-400" />
               </div>
-              <p className="text-red-400 mb-4">{error}</p>
-              <Button onClick={startScanner} variant="primary" leftIcon={<Camera className="w-4 h-4" />}>
-                Riprova
-              </Button>
+              <p className="text-red-400 mb-2 font-medium">Errore Fotocamera</p>
+              <p className="text-gray-400 text-sm mb-4 max-w-xs">{errorMessage}</p>
+              <div className="flex gap-2 justify-center">
+                <Button onClick={startScanner} variant="primary" size="sm" leftIcon={<Camera className="w-4 h-4" />}>
+                  Riprova
+                </Button>
+                <Button onClick={handleClose} variant="outline" size="sm">
+                  Chiudi
+                </Button>
+              </div>
             </div>
           </div>
         )}
         
-        {isScanning && (
+        {/* Scanning overlay */}
+        {status === 'scanning' && (
           <>
-            <div className="absolute inset-0 pointer-events-none">
-              <div className="absolute inset-0 bg-black/40" />
-              
+            {/* Scan frame overlay */}
+            <div className="absolute inset-0 pointer-events-none z-10">
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[280px] h-[150px]">
-                <div className="absolute inset-0 bg-transparent" style={{ boxShadow: '0 0 0 9999px rgba(0,0,0,0.5)' }} />
+                {/* Corner markers */}
+                <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary-500 rounded-tl-lg" />
+                <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary-500 rounded-tr-lg" />
+                <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-primary-500 rounded-bl-lg" />
+                <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-primary-500 rounded-br-lg" />
                 
-                <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-primary-500 rounded-tl" />
-                <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-primary-500 rounded-tr" />
-                <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-primary-500 rounded-bl" />
-                <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-primary-500 rounded-br" />
-                
-                <div className="absolute top-0 left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-primary-500 to-transparent animate-pulse" />
+                {/* Scanning line animation */}
+                <div className="absolute top-0 left-4 right-4 h-0.5 bg-primary-500 animate-pulse" />
               </div>
             </div>
             
-            <div className="absolute top-4 left-4 right-4 flex justify-between">
+            {/* Top controls */}
+            <div className="absolute top-3 left-3 right-3 flex justify-between z-20">
               <Button
                 onClick={handleClose}
                 variant="ghost"
                 size="sm"
-                className="bg-black/50 text-white hover:bg-black/70"
+                className="bg-black/60 text-white hover:bg-black/80 backdrop-blur-sm"
                 leftIcon={<X className="w-4 h-4" />}
               >
                 Chiudi
               </Button>
               
-              <div className="flex gap-2">
-                {hasFlash && (
-                  <button
-                    onClick={toggleFlash}
-                    className="p-2 rounded-lg bg-black/50 text-white hover:bg-black/70 transition-colors"
-                  >
-                    <Flashlight className={cn('w-5 h-5', flashOn && 'text-yellow-400')} />
-                  </button>
-                )}
+              {hasFlash && (
                 <button
-                  onClick={switchCamera}
-                  className="p-2 rounded-lg bg-black/50 text-white hover:bg-black/70 transition-colors"
+                  onClick={toggleFlash}
+                  className={cn(
+                    "p-2.5 rounded-lg backdrop-blur-sm transition-colors",
+                    flashOn 
+                      ? "bg-yellow-500 text-black" 
+                      : "bg-black/60 text-white hover:bg-black/80"
+                  )}
                 >
-                  <SwitchCamera className="w-5 h-5" />
+                  <Flashlight className="w-5 h-5" />
                 </button>
-              </div>
+              )}
             </div>
             
-            <div className="absolute bottom-4 left-4 right-4 text-center">
-              <p className="text-white text-sm bg-black/50 rounded-lg px-4 py-2">
-                Posiziona il codice a barre nell'area evidenziata
+            {/* Bottom instruction */}
+            <div className="absolute bottom-3 left-3 right-3 z-20">
+              <p className="text-white text-sm text-center bg-black/60 backdrop-blur-sm rounded-lg px-4 py-2.5">
+                📦 Inquadra il codice a barre
               </p>
             </div>
           </>
@@ -235,8 +267,8 @@ export function BarcodeScannerModal({ isOpen, onClose, onScan }: BarcodeScannerM
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
-      <div className="w-full max-w-lg mx-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
+      <div className="w-full max-w-lg">
         <BarcodeScanner onScan={onScan} onClose={onClose} />
       </div>
     </div>
