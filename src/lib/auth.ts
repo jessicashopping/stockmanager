@@ -1,5 +1,4 @@
 import { getSupabase } from '@/lib/supabase/client'
-import * as bcrypt from 'bcryptjs'
 import type { User } from '@/lib/types'
 
 // Default admin credentials
@@ -10,24 +9,28 @@ const DEFAULT_ADMIN = {
   role: 'admin' as const,
 }
 
+// Simple hash function using Web Crypto API (browser compatible)
+async function simpleHash(password: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(password + 'stockmanager-salt-2024')
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
 // Hash password
 export async function hashPassword(password: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    bcrypt.hash(password, 12, (err, hash) => {
-      if (err) reject(err)
-      else resolve(hash as string)
-    })
-  })
+  return simpleHash(password)
 }
 
 // Verify password
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  return new Promise((resolve, reject) => {
-    bcrypt.compare(password, hash, (err, result) => {
-      if (err) reject(err)
-      else resolve(result)
-    })
-  })
+  // Support both old plain text and new hashed passwords
+  if (hash === password) {
+    return true // Plain text match (legacy)
+  }
+  const hashedInput = await simpleHash(password)
+  return hashedInput === hash
 }
 
 // Generate session token
