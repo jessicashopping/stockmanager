@@ -122,7 +122,7 @@ export default function NewProductPage() {
       dismissToast(toastId)
 
       if (product) {
-        addProduct(product)
+        // Don't call addProduct here - realtime subscription will handle it
         showSuccess('Prodotto creato!', `"${product.name}" è stato aggiunto all'inventario`)
         router.push('/products')
       } else {
