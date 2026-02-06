@@ -1,8 +1,12 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import type { Product, Category, Subcategory, User, FilterOptions, DashboardStats } from './types'
 
 interface AppState {
+  // Hydration state
+  _hasHydrated: boolean
+  setHasHydrated: (state: boolean) => void
+
   // Theme
   theme: 'light' | 'dark'
   toggleTheme: () => void
@@ -65,6 +69,10 @@ const defaultFilters: FilterOptions = {
 export const useStore = create<AppState>()(
   persist(
     (set, get) => ({
+      // Hydration state
+      _hasHydrated: false,
+      setHasHydrated: (state) => set({ _hasHydrated: state }),
+
       // Theme
       theme: 'light',
       toggleTheme: () => {
@@ -147,11 +155,40 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'stockmanager-storage',
+      storage: createJSONStorage(() => {
+        // Safe localStorage wrapper for mobile browsers
+        if (typeof window === 'undefined') {
+          return {
+            getItem: () => null,
+            setItem: () => {},
+            removeItem: () => {},
+          }
+        }
+        try {
+          // Test if localStorage is available
+          const testKey = '__storage_test__'
+          window.localStorage.setItem(testKey, testKey)
+          window.localStorage.removeItem(testKey)
+          return window.localStorage
+        } catch (e) {
+          // Fallback to memory storage if localStorage is blocked
+          console.warn('localStorage not available, using memory storage')
+          const memoryStorage: Record<string, string> = {}
+          return {
+            getItem: (name: string) => memoryStorage[name] || null,
+            setItem: (name: string, value: string) => { memoryStorage[name] = value },
+            removeItem: (name: string) => { delete memoryStorage[name] },
+          }
+        }
+      }),
       partialize: (state) => ({
         theme: state.theme,
         sessionToken: state.sessionToken,
         sidebarOpen: state.sidebarOpen,
       }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true)
+      },
     }
   )
 )

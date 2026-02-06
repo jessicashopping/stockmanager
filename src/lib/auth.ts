@@ -1,5 +1,5 @@
 import { getSupabase } from '@/lib/supabase/client'
-import bcrypt from 'bcryptjs'
+import * as bcrypt from 'bcryptjs'
 import type { User } from '@/lib/types'
 
 // Default admin credentials
@@ -12,12 +12,22 @@ const DEFAULT_ADMIN = {
 
 // Hash password
 export async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, 12)
+  return new Promise((resolve, reject) => {
+    bcrypt.hash(password, 12, (err, hash) => {
+      if (err) reject(err)
+      else resolve(hash as string)
+    })
+  })
 }
 
 // Verify password
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  return bcrypt.compare(password, hash)
+  return new Promise((resolve, reject) => {
+    bcrypt.compare(password, hash, (err, result) => {
+      if (err) reject(err)
+      else resolve(result)
+    })
+  })
 }
 
 // Generate session token

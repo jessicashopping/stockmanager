@@ -14,13 +14,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
   const pathname = usePathname()
-  const { sessionToken, setUser, isAuthenticated } = useStore()
+  const { sessionToken, setUser, isAuthenticated, _hasHydrated } = useStore()
   
   useEffect(() => {
     initializeTheme()
   }, [])
   
   useEffect(() => {
+    // Wait for hydration before checking auth
+    if (!_hasHydrated) {
+      return
+    }
+    
     const checkAuth = async () => {
       try {
         // Initialize default user if needed
@@ -43,22 +48,26 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
     
     checkAuth()
-  }, [sessionToken, setUser])
+  }, [sessionToken, setUser, _hasHydrated])
   
   useEffect(() => {
-    if (!isLoading) {
-      const publicPaths = ['/login']
-      const isPublicPath = publicPaths.includes(pathname)
-      
-      if (!isAuthenticated && !isPublicPath) {
-        router.push('/login')
-      } else if (isAuthenticated && isPublicPath) {
-        router.push('/dashboard')
-      }
+    // Wait for both hydration and auth check
+    if (!_hasHydrated || isLoading) {
+      return
     }
-  }, [isLoading, isAuthenticated, pathname, router])
+    
+    const publicPaths = ['/login']
+    const isPublicPath = publicPaths.includes(pathname)
+    
+    if (!isAuthenticated && !isPublicPath) {
+      router.push('/login')
+    } else if (isAuthenticated && isPublicPath) {
+      router.push('/dashboard')
+    }
+  }, [isLoading, isAuthenticated, pathname, router, _hasHydrated])
   
-  if (isLoading) {
+  // Show loading while hydrating or checking auth
+  if (!_hasHydrated || isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
         <div className="flex flex-col items-center gap-4">
